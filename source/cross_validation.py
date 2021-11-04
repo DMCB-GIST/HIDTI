@@ -107,29 +107,43 @@ def loadDataset_dti(X, Y, Xall, Yall, labels, batch_size):
     return data_all, data_label, batch_len, one_count
 
 class dta_model(nn.Module):
-    def __init__(self, DVEC_SIZE, PVEC_SIZE):
+    def __init__(self, NUM_FILTERS, FILTER_LENGTH2, input_dim):
         super(dta_model, self).__init__()
         self.relu = nn.ReLU()
+        self.leakyReLU = torch.nn.LeakyReLU()
         self.maxpool = nn.AdaptiveMaxPool1d(1)
-        self.encoder = torch.nn.Sequential(
-            nn.Linear(15392, 256)
-            )
-        self.fc1 = nn.Linear(256, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.out1 = nn.Linear(64, 1)
-
         self.drop = nn.Dropout(p=0.5)
-        self.act = nn.ReLU()
+        #dvec=300, ddi:707, dse:4192, ddis:5603 = 6711
+        #pvec=100, ppi:1489, psim:1489, pdis:5603 = 8681
 
-    def forward(self,x):
-        encode_all = self.encoder(x)
+        self.layer1 = torch.nn.Sequential(
+            nn.Linear(input_dim, int(input_dim/2)),
+            nn.LayerNorm(int(input_dim/2)),
+            nn.ReLU(),
+            nn.Linear(int(input_dim/2),int(input_dim/8)),
+            )
+        self.projection1 = torch.nn.Sequential(
+            nn.Linear(input_dim,int(input_dim/8))
+            )
+        
+        self.out = torch.nn.Sequential(
+            nn.LayerNorm(int(input_dim/8)),
+            nn.ReLU(),
+            nn.Linear(int(input_dim/8), int(input_dim/32)),
+            nn.LayerNorm(int(input_dim/32)),
+            nn.ReLU(),
+            nn.Linear(int(input_dim/32), 1),
+            )
 
-        FC1 = self.relu(self.fc1(encode_all))
-        FC1 = self.drop(FC1)
-        FC2 = self.relu(self.fc2(FC1))
-        predictions = self.out1(FC2)
+    def forward(self,dr1,dr3,dr4,pr1,pr2,pr3,pr4):
+        concat = torch.cat([dr1, dr3, dr4, pr1, pr2, pr3, pr4], dim=1)
 
-        return torch.sigmoid(predictions)    
+        x1 = self.layer1(concat)
+        x1 += self.projection1(concat)
+
+        predictions = self.out(x1)
+
+        return torch.sigmoid(predictions)   
 
 class EarlyStopping_ddi:
     def __init__(self, patience=15, verbose=False, fold_info=0, epoch_info=0, log_info='empty', delta=0):
